@@ -1,26 +1,28 @@
 use crate::chunk::{Chunk, OpCode};
+use crate::compiler::compile;
 use crate::value::Value;
 use num_traits::FromPrimitive;
-
-const STACK_SIZE: usize = 256;
 
 pub enum InterpretErr {
     Compile,
     Runtime,
 }
 
+pub fn interpret(source: &String) -> Result<(), InterpretErr> {
+    compile(&source);
+    Ok(())
+}
+
 pub struct RVM {
     ip: usize,
-    stack: [Value; STACK_SIZE],
-    stack_top: usize,
+    stack: Vec<Value>,
 }
 
 impl RVM {
     pub fn new() -> Self {
         Self {
             ip: 0,
-            stack: [0.0; STACK_SIZE],
-            stack_top: 0,
+            stack: vec![],
         }
     }
 
@@ -29,24 +31,36 @@ impl RVM {
         self.run(chunk)
     }
 
-    pub fn push(&mut self, value: Value) {
-        self.stack[self.stack_top] = value;
-        self.stack_top += 1;
+    fn read_byte(&mut self, chunk: &Chunk) -> u8 {
+        let byte = chunk.code[self.ip];
+        self.ip += 1;
+        byte
     }
 
-    pub fn pop(&mut self) -> Value {
-        self.stack_top -= 1;
-        self.stack[self.stack_top]
+    fn read_constant(&mut self, chunk: &Chunk) -> Value {
+        chunk.constants.values[self.read_byte(chunk) as usize]
     }
 
-    pub fn run(&mut self, chunk: &Chunk) -> Result<(), InterpretErr> {
+    fn reset_stack(&mut self) {
+        self.stack = vec![];
+    }
+
+    fn push(&mut self, value: Value) {
+        self.stack.push(value);
+    }
+
+    fn pop(&mut self) -> Value {
+        self.stack.pop().unwrap()
+    }
+
+    fn run(&mut self, chunk: &Chunk) -> Result<(), InterpretErr> {
         loop {
             #[cfg(feature = "debug-trace-execution")]
             {
                 print!("          ");
-                for i in 0..self.stack_top {
+                for v in &self.stack {
                     print!("[ ");
-                    print!("{}", self.stack[i]);
+                    print!("{}", v);
                     print!(" ]");
                 }
                 println!();
@@ -89,19 +103,5 @@ impl RVM {
                 _ => (),
             }
         }
-    }
-
-    fn read_byte(&mut self, chunk: &Chunk) -> u8 {
-        let byte = chunk.code[self.ip];
-        self.ip += 1;
-        byte
-    }
-
-    fn read_constant(&mut self, chunk: &Chunk) -> Value {
-        chunk.constants.values[self.read_byte(chunk) as usize]
-    }
-
-    fn reset_stack(&mut self) {
-        self.stack_top = 0;
     }
 }

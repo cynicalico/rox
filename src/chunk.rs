@@ -15,55 +15,6 @@ pub enum OpCode {
     Return,
 }
 
-impl OpCode {
-    pub fn disassemble(&self, offset: usize, code: &[u8], constants: &ValueArray) -> usize {
-        match self {
-            OpCode::Constant => {
-                let constant = code[offset + 1] as usize;
-                println!(
-                    "{:<16} {:4} '{}'",
-                    "Constant", constant, constants.values[constant]
-                );
-                offset + 2
-            }
-            OpCode::ConstantLong => {
-                let constant = ((code[offset + 1] as usize) << 16)
-                    | ((code[offset + 2] as usize) << 8)
-                    | (code[offset + 3] as usize);
-                println!(
-                    "{:<16} {:4} '{}'",
-                    "ConstantLong", constant, constants.values[constant]
-                );
-                offset + 4
-            }
-            OpCode::Add => {
-                println!("Add");
-                offset + 1
-            }
-            OpCode::Subtract => {
-                println!("Subtract");
-                offset + 1
-            }
-            OpCode::Multiply => {
-                println!("Multiply");
-                offset + 1
-            }
-            OpCode::Divide => {
-                println!("Divide");
-                offset + 1
-            }
-            OpCode::Negate => {
-                println!("Negate");
-                offset + 1
-            }
-            OpCode::Return => {
-                println!("Return");
-                offset + 1
-            }
-        }
-    }
-}
-
 pub struct Chunk {
     pub code: Vec<u8>,
     lines: Vec<usize>,
@@ -122,7 +73,48 @@ impl Chunk {
         }
 
         match OpCode::from_u8(self.code[offset]) {
-            Some(op) => op.disassemble(offset, &self.code, &self.constants),
+            Some(OpCode::Constant) => {
+                let constant = self.code[offset + 1] as usize;
+                println!(
+                    "{:<16} {:4} '{}'",
+                    "Constant", constant, self.constants.values[constant]
+                );
+                offset + 2
+            }
+            Some(OpCode::ConstantLong) => {
+                let constant = ((self.code[offset + 1] as usize) << 16)
+                    | ((self.code[offset + 2] as usize) << 8)
+                    | (self.code[offset + 3] as usize);
+                println!(
+                    "{:<16} {:4} '{}'",
+                    "ConstantLong", constant, self.constants.values[constant]
+                );
+                offset + 4
+            }
+            Some(OpCode::Add) => {
+                println!("Add");
+                offset + 1
+            }
+            Some(OpCode::Subtract) => {
+                println!("Subtract");
+                offset + 1
+            }
+            Some(OpCode::Multiply) => {
+                println!("Multiply");
+                offset + 1
+            }
+            Some(OpCode::Divide) => {
+                println!("Divide");
+                offset + 1
+            }
+            Some(OpCode::Negate) => {
+                println!("Negate");
+                offset + 1
+            }
+            Some(OpCode::Return) => {
+                println!("Return");
+                offset + 1
+            }
             None => {
                 println!("Unknown opcode {}", self.code[offset]);
                 offset + 1

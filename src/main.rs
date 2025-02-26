@@ -1,29 +1,72 @@
-use crate::chunk::{Chunk, OpCode};
-use crate::rvm::RVM;
+#![allow(dead_code)]
+
+use crate::rvm::interpret;
+use clap::Parser;
+use std::io::Write;
+use std::path::PathBuf;
+use std::process::exit;
+use std::{fs, io};
 
 mod chunk;
 mod common;
+mod compiler;
 mod rvm;
+mod scanner;
 mod value;
 
+/// rox interpreter
+#[derive(Parser, Debug)]
+#[command(about, long_about = None)]
+struct Args {
+    /// Run file
+    #[arg(required = false)]
+    script: Option<PathBuf>,
+}
+
 fn main() {
-    let mut rvm = RVM::new();
+    let args = Args::parse();
 
-    let mut chunk = Chunk::new();
+    if let Some(script) = args.script {
+        run_file(script);
+    } else {
+        repl();
+    }
+}
 
-    chunk.write_constant(1.2, 123);
-    chunk.write_constant(3.4, 123);
+fn repl() {
+    loop {
+        print!("> ");
+        io::stdout().flush().unwrap();
 
-    chunk.write(OpCode::Add as u8, 123);
+        let mut line = String::new();
+        match io::stdin().read_line(&mut line) {
+            Ok(bytes_read) => {
+                if bytes_read == 0 {
+                    break;
+                }
 
-    chunk.write_constant(5.6, 123);
+                let _ = interpret(&line);
+                line.clear();
+            }
+            Err(err) => {
+                eprintln!("Failed to read line: {err}");
+            }
+        }
+    }
+}
 
-    chunk.write(OpCode::Divide as u8, 123);
-    chunk.write(OpCode::Negate as u8, 123);
+fn run_file(path: PathBuf) {
+    match fs::read_to_string(path) {
+        Ok(source) => {
+            let res = interpret(&source);
 
-    chunk.write(OpCode::Return as u8, 123);
-
-    rvm.interpret(&chunk);
-
-    chunk.free();
+            if res.is_err() {
+                exit(1);
+            }
+        }
+        Err(err) => {
+            eprintln!("Failed to read script: {err}");
+            exit(1);
+        }
+    }
 }
