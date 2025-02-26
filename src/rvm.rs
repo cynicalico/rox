@@ -2,74 +2,103 @@ use crate::chunk::{Chunk, OpCode};
 use crate::compiler::compile;
 use crate::value::Value;
 use num_traits::FromPrimitive;
+use std::{mem, ptr};
+
+const STACK_MAX: usize = 256;
 
 pub enum InterpretErr {
     Compile,
     Runtime,
 }
 
-pub fn interpret(source: &String) -> Result<(), InterpretErr> {
-    compile(&source);
-    Ok(())
+pub fn interpret(source: &str) -> Result<(), InterpretErr> {
+    let mut chunk = Chunk::new();
+    if !compile(source, &mut chunk) {
+        Err(InterpretErr::Compile)
+    } else {
+        let mut vm = RVM::new();
+        vm.reset_stack();
+
+        vm.interpret(&chunk)
+    }
 }
 
 pub struct RVM {
-    ip: usize,
-    stack: Vec<Value>,
+    ip: *const u8,
+    stack: [Value; STACK_MAX],
+    stack_top: *mut Value,
 }
 
 impl RVM {
     pub fn new() -> Self {
         Self {
-            ip: 0,
-            stack: vec![],
+            ip: ptr::null(),
+            stack: [0.0; STACK_MAX],
+            stack_top: ptr::null_mut(),
         }
     }
 
     pub fn interpret(&mut self, chunk: &Chunk) -> Result<(), InterpretErr> {
-        self.ip = 0;
-        self.run(chunk)
+        self.ip = chunk.code.as_ptr();
+        unsafe { self.run(chunk) }
     }
 
-    fn read_byte(&mut self, chunk: &Chunk) -> u8 {
-        let byte = chunk.code[self.ip];
-        self.ip += 1;
+    unsafe fn read_byte(&mut self) -> u8 {
+        let byte = *self.ip;
+        self.ip = self.ip.add(1);
         byte
     }
 
-    fn read_constant(&mut self, chunk: &Chunk) -> Value {
-        chunk.constants.values[self.read_byte(chunk) as usize]
+    unsafe fn read_constant(&mut self, chunk: &Chunk) -> Value {
+        chunk.constants.values[self.read_byte() as usize]
+    }
+
+    unsafe fn read_constant_long(&mut self, chunk: &Chunk) -> Value {
+        let v1 = (self.read_byte() as usize) << 16;
+        let v2 = (self.read_byte() as usize) << 8;
+        let v3 = self.read_byte() as usize;
+        chunk.constants.values[v1 | v2 | v3]
     }
 
     fn reset_stack(&mut self) {
-        self.stack = vec![];
+        self.stack_top = self.stack.as_mut_ptr();
     }
 
-    fn push(&mut self, value: Value) {
-        self.stack.push(value);
+    unsafe fn push(&mut self, value: Value) {
+        *self.stack_top = value;
+        self.stack_top = self.stack_top.add(1);
     }
 
-    fn pop(&mut self) -> Value {
-        self.stack.pop().unwrap()
+    unsafe fn pop(&mut self) -> Value {
+        self.stack_top = self.stack_top.sub(1);
+        *self.stack_top
     }
 
-    fn run(&mut self, chunk: &Chunk) -> Result<(), InterpretErr> {
+    unsafe fn run(&mut self, chunk: &Chunk) -> Result<(), InterpretErr> {
         loop {
             #[cfg(feature = "debug-trace-execution")]
             {
                 print!("          ");
-                for v in &self.stack {
+                let mut slot = self.stack.as_ptr();
+                while slot < self.stack_top {
                     print!("[ ");
-                    print!("{}", v);
+                    print!("{}", *slot);
                     print!(" ]");
+                    slot = slot.add(1);
                 }
                 println!();
-                chunk.disassemble_instruction(self.ip);
+                let offset =
+                    (self.ip as isize - chunk.code.as_ptr() as isize) / size_of::<u8>() as isize;
+                chunk.disassemble_instruction(offset as usize);
             }
 
-            match OpCode::from_u8(self.read_byte(chunk)) {
+            match OpCode::from_u8(self.read_byte()) {
                 Some(OpCode::Constant) => {
                     let constant = self.read_constant(chunk);
+                    self.push(constant);
+                }
+                Some(OpCode::ConstantLong) => {
+                    let constant = self.read_constant_long(chunk);
                     self.push(constant);
                 }
                 Some(OpCode::Add) => {
