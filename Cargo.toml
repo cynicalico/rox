@@ -3,6 +3,9 @@ name = "rox"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+debug-trace-execution = []
+
 [dependencies]
 num = "0.4.3"
 num-derive = "0.4.2"

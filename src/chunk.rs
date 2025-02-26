@@ -7,6 +7,11 @@ use num_traits::FromPrimitive;
 pub enum OpCode {
     Constant,
     ConstantLong,
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Negate,
     Return,
 }
 
@@ -31,6 +36,26 @@ impl OpCode {
                 );
                 offset + 4
             }
+            OpCode::Add => {
+                println!("Add");
+                offset + 1
+            }
+            OpCode::Subtract => {
+                println!("Subtract");
+                offset + 1
+            }
+            OpCode::Multiply => {
+                println!("Multiply");
+                offset + 1
+            }
+            OpCode::Divide => {
+                println!("Divide");
+                offset + 1
+            }
+            OpCode::Negate => {
+                println!("Negate");
+                offset + 1
+            }
             OpCode::Return => {
                 println!("Return");
                 offset + 1
@@ -40,9 +65,9 @@ impl OpCode {
 }
 
 pub struct Chunk {
-    code: Vec<u8>,
+    pub code: Vec<u8>,
     lines: Vec<usize>,
-    constants: ValueArray,
+    pub constants: ValueArray,
 }
 
 impl Chunk {
@@ -83,20 +108,24 @@ impl Chunk {
 
         let mut offset = 0;
         while offset < self.code.len() {
-            print!("{:04} ", offset);
+            offset = self.disassemble_instruction(offset);
+        }
+    }
 
-            if offset > 0 && self.lines[offset] == self.lines[offset - 1] {
-                print!("   | ");
-            } else {
-                print!("{:4} ", self.lines[offset]);
-            }
+    pub fn disassemble_instruction(&self, offset: usize) -> usize {
+        print!("{:04} ", offset);
 
-            offset = match OpCode::from_u8(self.code[offset]) {
-                Some(op) => op.disassemble(offset, &self.code, &self.constants),
-                None => {
-                    println!("Unknown opcode {}", self.code[offset]);
-                    offset + 1
-                }
+        if offset > 0 && self.lines[offset] == self.lines[offset - 1] {
+            print!("   | ");
+        } else {
+            print!("{:4} ", self.lines[offset]);
+        }
+
+        match OpCode::from_u8(self.code[offset]) {
+            Some(op) => op.disassemble(offset, &self.code, &self.constants),
+            None => {
+                println!("Unknown opcode {}", self.code[offset]);
+                offset + 1
             }
         }
     }
