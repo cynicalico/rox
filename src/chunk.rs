@@ -7,17 +7,24 @@ use num_traits::FromPrimitive;
 pub enum OpCode {
     Constant,
     ConstantLong,
+    Nil,
+    True,
+    False,
+    Equal,
+    Greater,
+    Less,
     Add,
     Subtract,
     Multiply,
     Divide,
+    Not,
     Negate,
     Return,
 }
 
 pub struct Chunk {
     pub code: Vec<u8>,
-    lines: Vec<usize>,
+    pub lines: Vec<usize>,
     pub constants: ValueArray,
 }
 
@@ -91,6 +98,30 @@ impl Chunk {
                 );
                 offset + 4
             }
+            Some(OpCode::Nil) => {
+                println!("Nil");
+                offset + 1
+            }
+            Some(OpCode::True) => {
+                println!("True");
+                offset + 1
+            }
+            Some(OpCode::False) => {
+                println!("False");
+                offset + 1
+            }
+            Some(OpCode::Equal) => {
+                println!("Equal");
+                offset + 1
+            }
+            Some(OpCode::Greater) => {
+                println!("Greater");
+                offset + 1
+            }
+            Some(OpCode::Less) => {
+                println!("Less");
+                offset + 1
+            }
             Some(OpCode::Add) => {
                 println!("Add");
                 offset + 1
@@ -105,6 +136,10 @@ impl Chunk {
             }
             Some(OpCode::Divide) => {
                 println!("Divide");
+                offset + 1
+            }
+            Some(OpCode::Not) => {
+                println!("Not");
                 offset + 1
             }
             Some(OpCode::Negate) => {

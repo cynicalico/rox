@@ -1,3 +1,4 @@
+#![feature(let_chains)]
 #![allow(dead_code)]
 
 use crate::rvm::interpret;

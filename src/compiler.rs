@@ -84,31 +84,31 @@ impl<'a> Parser<'a> {
                 (TokenKind::Semicolon,    ParseRule::new(None,                 None,               Precedence::None)),
                 (TokenKind::Slash,        ParseRule::new(None,                 Some(Self::binary), Precedence::Factor)),
                 (TokenKind::Star,         ParseRule::new(None,                 Some(Self::binary), Precedence::Factor)),
-                (TokenKind::Bang,         ParseRule::new(None,                 None,               Precedence::None)),
-                (TokenKind::BangEqual,    ParseRule::new(None,                 None,               Precedence::None)),
+                (TokenKind::Bang,         ParseRule::new(Some(Self::unary),    None,               Precedence::None)),
+                (TokenKind::BangEqual,    ParseRule::new(None,                 Some(Self::binary), Precedence::Equality)),
                 (TokenKind::Equal,        ParseRule::new(None,                 None,               Precedence::None)),
-                (TokenKind::EqualEqual,   ParseRule::new(None,                 None,               Precedence::None)),
-                (TokenKind::Greater,      ParseRule::new(None,                 None,               Precedence::None)),
-                (TokenKind::GreaterEqual, ParseRule::new(None,                 None,               Precedence::None)),
-                (TokenKind::Less,         ParseRule::new(None,                 None,               Precedence::None)),
-                (TokenKind::LessEqual,    ParseRule::new(None,                 None,               Precedence::None)),
+                (TokenKind::EqualEqual,   ParseRule::new(None,                 Some(Self::binary), Precedence::Equality)),
+                (TokenKind::Greater,      ParseRule::new(None,                 Some(Self::binary), Precedence::Comparison)),
+                (TokenKind::GreaterEqual, ParseRule::new(None,                 Some(Self::binary), Precedence::Comparison)),
+                (TokenKind::Less,         ParseRule::new(None,                 Some(Self::binary), Precedence::Comparison)),
+                (TokenKind::LessEqual,    ParseRule::new(None,                 Some(Self::binary), Precedence::Comparison)),
                 (TokenKind::Identifier,   ParseRule::new(None,                 None,               Precedence::None)),
                 (TokenKind::String,       ParseRule::new(None,                 None,               Precedence::None)),
                 (TokenKind::Number,       ParseRule::new(Some(Self::number),   None,               Precedence::None)),
                 (TokenKind::And,          ParseRule::new(None,                 None,               Precedence::None)),
                 (TokenKind::Class,        ParseRule::new(None,                 None,               Precedence::None)),
                 (TokenKind::Else,         ParseRule::new(None,                 None,               Precedence::None)),
-                (TokenKind::False,        ParseRule::new(None,                 None,               Precedence::None)),
+                (TokenKind::False,        ParseRule::new(Some(Self::literal),  None,               Precedence::None)),
                 (TokenKind::For,          ParseRule::new(None,                 None,               Precedence::None)),
                 (TokenKind::Fun,          ParseRule::new(None,                 None,               Precedence::None)),
                 (TokenKind::If,           ParseRule::new(None,                 None,               Precedence::None)),
-                (TokenKind::Nil,          ParseRule::new(None,                 None,               Precedence::None)),
+                (TokenKind::Nil,          ParseRule::new(Some(Self::literal),  None,               Precedence::None)),
                 (TokenKind::Or,           ParseRule::new(None,                 None,               Precedence::None)),
                 (TokenKind::Print,        ParseRule::new(None,                 None,               Precedence::None)),
                 (TokenKind::Return,       ParseRule::new(None,                 None,               Precedence::None)),
                 (TokenKind::Super,        ParseRule::new(None,                 None,               Precedence::None)),
                 (TokenKind::This,         ParseRule::new(None,                 None,               Precedence::None)),
-                (TokenKind::True,         ParseRule::new(None,                 None,               Precedence::None)),
+                (TokenKind::True,         ParseRule::new(Some(Self::literal),  None,               Precedence::None)),
                 (TokenKind::Var,          ParseRule::new(None,                 None,               Precedence::None)),
                 (TokenKind::While,        ParseRule::new(None,                 None,               Precedence::None)),
                 (TokenKind::Error,        ParseRule::new(None,                 None,               Precedence::None)),
@@ -157,6 +157,12 @@ impl<'a> Parser<'a> {
 
     fn end_compiler(&self, chunk: &mut Chunk) {
         self.emit_return(chunk);
+        #[cfg(feature = "debug-print-code")]
+        {
+            if !self.had_error {
+                chunk.disassemble("code");
+            }
+        }
     }
 
     fn binary(&mut self, scanner: &mut Scanner<'a>, chunk: &mut Chunk) {
@@ -169,10 +175,29 @@ impl<'a> Parser<'a> {
         );
 
         match op_kind {
+            TokenKind::BangEqual => self.emit_bytes(chunk, OpCode::Equal as u8, OpCode::Not as u8),
+            TokenKind::EqualEqual => self.emit_byte(chunk, OpCode::Equal as u8),
+            TokenKind::Greater => self.emit_byte(chunk, OpCode::Greater as u8),
+            TokenKind::GreaterEqual => {
+                self.emit_bytes(chunk, OpCode::Less as u8, OpCode::Not as u8)
+            }
+            TokenKind::Less => self.emit_byte(chunk, OpCode::Less as u8),
+            TokenKind::LessEqual => {
+                self.emit_bytes(chunk, OpCode::Greater as u8, OpCode::Not as u8)
+            }
             TokenKind::Plus => self.emit_byte(chunk, OpCode::Add as u8),
             TokenKind::Minus => self.emit_byte(chunk, OpCode::Subtract as u8),
             TokenKind::Star => self.emit_byte(chunk, OpCode::Multiply as u8),
             TokenKind::Slash => self.emit_byte(chunk, OpCode::Divide as u8),
+            _ => unreachable!(),
+        }
+    }
+
+    fn literal(&mut self, _scanner: &mut Scanner<'a>, chunk: &mut Chunk) {
+        match self.prev.kind {
+            TokenKind::False => self.emit_byte(chunk, OpCode::False as u8),
+            TokenKind::Nil => self.emit_byte(chunk, OpCode::Nil as u8),
+            TokenKind::True => self.emit_byte(chunk, OpCode::True as u8),
             _ => unreachable!(),
         }
     }
@@ -187,7 +212,7 @@ impl<'a> Parser<'a> {
     }
 
     fn number(&mut self, _scanner: &mut Scanner<'a>, chunk: &mut Chunk) {
-        self.emit_constant(chunk, self.prev.lexeme.parse().unwrap());
+        self.emit_constant(chunk, Value::Number(self.prev.lexeme.parse().unwrap()));
     }
 
     fn unary(&mut self, scanner: &mut Scanner<'a>, chunk: &mut Chunk) {
@@ -196,6 +221,7 @@ impl<'a> Parser<'a> {
         self.parse_precedence(scanner, chunk, Precedence::Unary);
 
         match op_kind {
+            TokenKind::Bang => self.emit_byte(chunk, OpCode::Not as u8),
             TokenKind::Minus => self.emit_byte(chunk, OpCode::Negate as u8),
             _ => unreachable!(),
         }

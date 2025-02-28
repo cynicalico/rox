@@ -112,33 +112,33 @@ impl<'a> Scanner<'a> {
             '*' => self.make_token(TokenKind::Star),
             '!' => {
                 let kind = if self.advance_match('=') {
-                    TokenKind::Bang
-                } else {
                     TokenKind::BangEqual
+                } else {
+                    TokenKind::Bang
                 };
                 self.make_token(kind)
             }
             '=' => {
                 let kind = if self.advance_match('=') {
-                    TokenKind::Equal
-                } else {
                     TokenKind::EqualEqual
+                } else {
+                    TokenKind::Equal
                 };
                 self.make_token(kind)
             }
             '<' => {
                 let kind = if self.advance_match('=') {
-                    TokenKind::Less
-                } else {
                     TokenKind::LessEqual
+                } else {
+                    TokenKind::Less
                 };
                 self.make_token(kind)
             }
             '>' => {
                 let kind = if self.advance_match('=') {
-                    TokenKind::Greater
-                } else {
                     TokenKind::GreaterEqual
+                } else {
+                    TokenKind::Greater
                 };
                 self.make_token(kind)
             }
