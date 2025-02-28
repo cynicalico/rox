@@ -1,5 +1,6 @@
 use crate::chunk::{Chunk, OpCode};
 use crate::compiler::compile;
+use crate::object::{Obj, ObjKind, ObjString};
 use crate::value::Value;
 use num_traits::FromPrimitive;
 use std::ptr;
@@ -12,14 +13,14 @@ pub enum InterpretErr {
 }
 
 pub fn interpret(source: &str) -> Result<(), InterpretErr> {
+    let mut vm = RVM::new();
+    vm.reset_stack();
+
     let mut chunk = Chunk::new();
-    if !compile(source, &mut chunk) {
+    if !compile(&mut vm, source, &mut chunk) {
         Err(InterpretErr::Compile)
     } else {
-        let mut vm = RVM::new();
-        vm.reset_stack();
-
-        vm.interpret(&chunk)
+        unsafe { vm.interpret(&chunk) }
     }
 }
 
@@ -27,6 +28,7 @@ pub struct RVM {
     ip: *const u8,
     stack: [Value; STACK_MAX],
     stack_top: *mut Value,
+    objects: *mut Obj,
 }
 
 impl RVM {
@@ -35,7 +37,13 @@ impl RVM {
             ip: ptr::null(),
             stack: core::array::from_fn(|_| Value::default()),
             stack_top: ptr::null_mut(),
+            objects: ptr::null_mut(),
         }
+    }
+
+    pub unsafe fn interpret(&mut self, chunk: &Chunk) -> Result<(), InterpretErr> {
+        self.ip = chunk.code.as_ptr();
+        self.run(chunk)
     }
 
     fn reset_stack(&mut self) {
@@ -52,9 +60,11 @@ impl RVM {
         self.reset_stack();
     }
 
-    pub fn interpret(&mut self, chunk: &Chunk) -> Result<(), InterpretErr> {
-        self.ip = chunk.code.as_ptr();
-        unsafe { self.run(chunk) }
+    pub(crate) unsafe fn allocate_obj<T>(&mut self, obj: Box<T>) -> *mut Obj {
+        let obj = Box::into_raw(obj) as *mut Obj;
+        (*obj).next = self.objects;
+        self.objects = obj;
+        obj
     }
 
     unsafe fn read_byte(&mut self) -> u8 {
@@ -147,7 +157,25 @@ impl RVM {
                     binary_op!(Value::Boolean, <);
                 }
                 Some(OpCode::Add) => {
-                    binary_op!(Value::Number, +);
+                    let b = self.pop();
+                    let a = self.pop();
+                    if let Value::Number(b) = b
+                        && let Value::Number(a) = a
+                    {
+                        self.push(Value::Number(a + b))
+                    } else if let Value::Obj(b) = b
+                        && (**b).kind == ObjKind::String
+                        && let Value::Obj(a) = a
+                        && (**a).kind == ObjKind::String
+                    {
+                        let b = &(*(*b as *mut ObjString)).value;
+                        let a = &(*(*a as *mut ObjString)).value;
+                        let c = Value::Obj(self.allocate_obj(ObjString::new(a.to_string() + b)));
+                        self.push(c);
+                    } else {
+                        self.runtime_error(chunk, "Operands must be numbers or strings");
+                        return Err(InterpretErr::Runtime);
+                    }
                 }
                 Some(OpCode::Subtract) => {
                     binary_op!(Value::Number, -);

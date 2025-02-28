@@ -1,4 +1,6 @@
 use crate::chunk::{Chunk, OpCode};
+use crate::object::ObjString;
+use crate::rvm::RVM;
 use crate::scanner::{Scanner, Token, TokenKind};
 use crate::value::Value;
 use hashbrown::HashMap;
@@ -6,12 +8,12 @@ use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use std::mem::take;
 
-pub fn compile(source: &str, chunk: &mut Chunk) -> bool {
+pub fn compile(vm: &mut RVM, source: &str, chunk: &mut Chunk) -> bool {
     let mut scanner = Scanner::new(source);
     let mut parser = Parser::new();
 
     parser.advance(&mut scanner);
-    parser.expression(&mut scanner, chunk);
+    parser.expression(vm, &mut scanner, chunk);
     parser.consume(&mut scanner, TokenKind::Eof, "Expect end of expression");
     parser.end_compiler(chunk);
 
@@ -34,7 +36,7 @@ pub enum Precedence {
     Primary,
 }
 
-type ParserRuleFn<'a> = fn(&mut Parser<'a>, &mut Scanner<'a>, &mut Chunk);
+type ParserRuleFn<'a> = fn(&mut Parser<'a>, &mut RVM, &mut Scanner<'a>, &mut Chunk);
 
 pub struct ParseRule<'a> {
     prefix: Option<ParserRuleFn<'a>>,
@@ -93,7 +95,7 @@ impl<'a> Parser<'a> {
                 (TokenKind::Less,         ParseRule::new(None,                 Some(Self::binary), Precedence::Comparison)),
                 (TokenKind::LessEqual,    ParseRule::new(None,                 Some(Self::binary), Precedence::Comparison)),
                 (TokenKind::Identifier,   ParseRule::new(None,                 None,               Precedence::None)),
-                (TokenKind::String,       ParseRule::new(None,                 None,               Precedence::None)),
+                (TokenKind::String,       ParseRule::new(Some(Self::string),   None,               Precedence::None)),
                 (TokenKind::Number,       ParseRule::new(Some(Self::number),   None,               Precedence::None)),
                 (TokenKind::And,          ParseRule::new(None,                 None,               Precedence::None)),
                 (TokenKind::Class,        ParseRule::new(None,                 None,               Precedence::None)),
@@ -165,10 +167,11 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn binary(&mut self, scanner: &mut Scanner<'a>, chunk: &mut Chunk) {
+    fn binary(&mut self, vm: &mut RVM, scanner: &mut Scanner<'a>, chunk: &mut Chunk) {
         let op_kind = self.prev.kind;
         let rule = &self.rules[&op_kind];
         self.parse_precedence(
+            vm,
             scanner,
             chunk,
             Precedence::from_u8(rule.precedence as u8 + 1).unwrap(),
@@ -193,7 +196,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn literal(&mut self, _scanner: &mut Scanner<'a>, chunk: &mut Chunk) {
+    fn literal(&mut self, _vm: &mut RVM, _scanner: &mut Scanner<'a>, chunk: &mut Chunk) {
         match self.prev.kind {
             TokenKind::False => self.emit_byte(chunk, OpCode::False as u8),
             TokenKind::Nil => self.emit_byte(chunk, OpCode::Nil as u8),
@@ -202,8 +205,8 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn grouping(&mut self, scanner: &mut Scanner<'a>, chunk: &mut Chunk) {
-        self.expression(scanner, chunk);
+    fn grouping(&mut self, vm: &mut RVM, scanner: &mut Scanner<'a>, chunk: &mut Chunk) {
+        self.expression(vm, scanner, chunk);
         self.consume(
             scanner,
             TokenKind::RightParen,
@@ -211,14 +214,21 @@ impl<'a> Parser<'a> {
         );
     }
 
-    fn number(&mut self, _scanner: &mut Scanner<'a>, chunk: &mut Chunk) {
+    fn number(&mut self, _vm: &mut RVM, _scanner: &mut Scanner<'a>, chunk: &mut Chunk) {
         self.emit_constant(chunk, Value::Number(self.prev.lexeme.parse().unwrap()));
     }
 
-    fn unary(&mut self, scanner: &mut Scanner<'a>, chunk: &mut Chunk) {
+    fn string(&mut self, vm: &mut RVM, _scanner: &mut Scanner<'a>, chunk: &mut Chunk) {
+        let obj = ObjString::new(self.prev.lexeme[1..self.prev.lexeme.len() - 1].to_string());
+        unsafe {
+            self.emit_constant(chunk, Value::Obj(vm.allocate_obj(obj)));
+        }
+    }
+
+    fn unary(&mut self, vm: &mut RVM, scanner: &mut Scanner<'a>, chunk: &mut Chunk) {
         let op_kind = self.prev.kind;
 
-        self.parse_precedence(scanner, chunk, Precedence::Unary);
+        self.parse_precedence(vm, scanner, chunk, Precedence::Unary);
 
         match op_kind {
             TokenKind::Bang => self.emit_byte(chunk, OpCode::Not as u8),
@@ -229,6 +239,7 @@ impl<'a> Parser<'a> {
 
     fn parse_precedence(
         &mut self,
+        vm: &mut RVM,
         scanner: &mut Scanner<'a>,
         chunk: &mut Chunk,
         precedence: Precedence,
@@ -239,17 +250,17 @@ impl<'a> Parser<'a> {
                 self.error("Expect expression");
                 return;
             }
-            Some(f) => f(self, scanner, chunk),
+            Some(f) => f(self, vm, scanner, chunk),
         };
 
         while precedence <= self.rules[&self.curr.kind].precedence {
             self.advance(scanner);
-            self.rules[&self.prev.kind].infix.unwrap()(self, scanner, chunk);
+            self.rules[&self.prev.kind].infix.unwrap()(self, vm, scanner, chunk);
         }
     }
 
-    pub fn expression(&mut self, scanner: &mut Scanner<'a>, chunk: &mut Chunk) {
-        self.parse_precedence(scanner, chunk, Precedence::Assignment);
+    pub fn expression(&mut self, vm: &mut RVM, scanner: &mut Scanner<'a>, chunk: &mut Chunk) {
+        self.parse_precedence(vm, scanner, chunk, Precedence::Assignment);
     }
 
     fn error_at_curr(&mut self, message: &'a str) {

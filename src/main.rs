@@ -14,6 +14,7 @@ mod compiler;
 mod rvm;
 mod scanner;
 mod value;
+mod object;
 
 /// rox interpreter
 #[derive(Parser, Debug)]
